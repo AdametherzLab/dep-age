@@ -1,7 +1,7 @@
 {
   "name": "@adametherzlab/dep-age",
-  "version": "0.1.0",
-  "description": "npm dependency age checker — flag outdated/abandoned packages with alternatives",
+  "version": "2.0.0",
+  "description": "Detect abandoned npm dependencies — health scores, CLI, GitHub Action, zero deps",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -14,8 +14,13 @@
     },
     "./package.json": "./package.json"
   },
+  "bin": {
+    "dep-age": "./src/cli.ts"
+  },
   "files": [
     "dist",
+    "src/cli.ts",
+    "action.yml",
     "README.md",
     "LICENSE"
   ],
@@ -37,7 +42,13 @@
     "npm",
     "dependencies",
     "maintenance",
-    "audit"
+    "audit",
+    "abandoned",
+    "health-score",
+    "cli",
+    "github-action",
+    "dependency-checker",
+    "security"
   ],
   "author": {
     "name": "AdametherzLab",

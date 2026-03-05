@@ -1,6 +1,6 @@
 import * as path from "path";
 import * as fs from "fs";
-// REMOVED external import: import { setTimeout } from "timers/promises";
+import { setTimeout as sleep } from "timers/promises";
 import type { PackageJson, ScanOptions, DependencyInfo, ScanResult, AbandonmentThreshold } from "./types";
 import { DEFAULT_ABANDONMENT_THRESHOLD } from "./types";
 
@@ -78,7 +78,7 @@ export async function fetchPackageMetadata(
   const registryEndpoint = new URL(name, registryUrl).toString();
   
   const controller = new AbortController();
-  const timeout = setTimeout(fetchTimeoutMs).then(() => {
+  const timeout = sleep(fetchTimeoutMs).then(() => {
     controller.abort();
     throw new Error(`Registry request timed out after ${fetchTimeoutMs}ms`);
   });

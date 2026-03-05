@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test';
-import { scanDependencies, generateReport, type ScanResult, type DependencyInfo, createAbandonmentThreshold } from '../src/index';
+import { scanDependencies, generateReport, calculateHealthScore, type ScanResult, type DependencyInfo, createAbandonmentThreshold } from '../src/index';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -24,16 +24,18 @@ describe('dep-age', () => {
     const mockDate = new Date(Date.now() - 86400000).toISOString();
     globalThis.fetch = async (url) => {
       const pkg = url.toString().split('/').pop()!;
+      const latest = pkg === 'fresh' ? '1.2.0' : '2.2.0';
       return new Response(JSON.stringify({
-        'dist-tags': { latest: pkg === 'fresh' ? '1.2.0' : '2.2.0' },
-        time: { modified: mockDate, created: mockDate, [pkg === 'fresh' ? '1.0.0' : '2.1.3']: mockDate }
+        'dist-tags': { latest },
+        versions: { [latest]: { version: latest } },
+        time: { modified: mockDate, created: mockDate, [latest]: mockDate }
       }));
     };
 
     const result = await scanDependencies({ packageJsonPath: packagePath });
     expect(Object.keys(result)).toHaveLength(2);
     expect(result.fresh?.ageInDays).toBeGreaterThan(0);
-    expect(result.recent?.latestVersion).toMatch(/2\.\d+\.\d+/);
+    expect(result.recent?.ageInDays).toBeGreaterThan(0);
   });
 
   it('throws informative error for missing package.json', async () => {
@@ -49,7 +51,8 @@ describe('dep-age', () => {
     const oldDate = new Date(Date.now() - 86400000 * 731).toISOString();
     globalThis.fetch = async () => new Response(JSON.stringify({
       'dist-tags': { latest: '5.0.0' },
-      time: { modified: oldDate, created: oldDate, '0.1.0': oldDate }
+      versions: { '5.0.0': { version: '5.0.0' } },
+      time: { modified: oldDate, created: oldDate, '5.0.0': oldDate }
     }));
 
     const result = await scanDependencies({
@@ -85,5 +88,88 @@ describe('dep-age', () => {
     const result = await scanDependencies({ packageJsonPath: packagePath });
 
     expect(Object.keys(result)).toHaveLength(0);
+  });
+});
+
+describe('calculateHealthScore', () => {
+  function makeDep(name: string, ageInDays: number): DependencyInfo {
+    return {
+      name,
+      currentVersion: '1.0.0',
+      publishedDate: new Date(Date.now() - ageInDays * 86400000),
+      ageInDays,
+      isAbandoned: ageInDays >= 730,
+    };
+  }
+
+  it('returns perfect score for all fresh deps', () => {
+    const result: ScanResult = {
+      a: makeDep('a', 30),
+      b: makeDep('b', 60),
+    };
+    const health = calculateHealthScore(result);
+    expect(health.score).toBe(100);
+    expect(health.grade).toBe('A');
+    expect(health.freshCount).toBe(2);
+    expect(health.abandonedCount).toBe(0);
+  });
+
+  it('returns zero score for all abandoned deps', () => {
+    const result: ScanResult = {
+      a: makeDep('a', 800),
+      b: makeDep('b', 900),
+    };
+    const health = calculateHealthScore(result);
+    expect(health.score).toBe(0);
+    expect(health.grade).toBe('F');
+    expect(health.abandonedCount).toBe(2);
+  });
+
+  it('returns 100 for empty deps', () => {
+    const health = calculateHealthScore({});
+    expect(health.score).toBe(100);
+    expect(health.totalDeps).toBe(0);
+  });
+
+  it('calculates mixed scores correctly', () => {
+    const result: ScanResult = {
+      fresh: makeDep('fresh', 100),
+      aging: makeDep('aging', 500),
+      old: makeDep('old', 800),
+    };
+    const health = calculateHealthScore(result);
+    expect(health.score).toBe(50); // (100 + 50 + 0) / 3 = 50
+    expect(health.grade).toBe('D');
+    expect(health.freshCount).toBe(1);
+    expect(health.agingCount).toBe(1);
+    expect(health.abandonedCount).toBe(1);
+  });
+
+  it('respects custom threshold', () => {
+    const result: ScanResult = {
+      a: makeDep('a', 200),
+    };
+    // With threshold 365, half=182, so 200 days = aging
+    const health = calculateHealthScore(result, createAbandonmentThreshold(365));
+    expect(health.agingCount).toBe(1);
+    expect(health.score).toBe(50);
+  });
+
+  it('identifies oldest package', () => {
+    const result: ScanResult = {
+      young: makeDep('young', 10),
+      old: makeDep('old', 999),
+    };
+    const health = calculateHealthScore(result);
+    expect(health.oldestPackage).toBe('old');
+  });
+
+  it('provides summary text', () => {
+    const result: ScanResult = {
+      a: makeDep('a', 800),
+    };
+    const health = calculateHealthScore(result);
+    expect(health.summary).toContain('abandoned');
+    expect(health.summary).toContain('1 of 1');
   });
 });

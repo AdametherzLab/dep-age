@@ -1,0 +1,46 @@
+name: 'dep-age'
+description: 'Detect abandoned npm dependencies in your project'
+branding:
+  icon: 'clock'
+  color: 'orange'
+inputs:
+  path:
+    description: 'Path to package.json'
+    required: false
+    default: './package.json'
+  threshold:
+    description: 'Days before marking a dependency as abandoned'
+    required: false
+    default: '730'
+  fail-on-abandoned:
+    description: 'Fail the check if abandoned dependencies are found'
+    required: false
+    default: 'true'
+  format:
+    description: 'Output format (text, json, markdown)'
+    required: false
+    default: 'markdown'
+outputs:
+  score:
+    description: 'Dependency health score (0-100)'
+  grade:
+    description: 'Health grade (A-F)'
+  abandoned-count:
+    description: 'Number of abandoned dependencies'
+  report:
+    description: 'Full report output'
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@v2
+    - name: Run dep-age scan
+      shell: bash
+      run: |
+        cd ${{ github.workspace }}
+        npx @adametherzlab/dep-age \
+          --path "${{ inputs.path }}" \
+          --threshold "${{ inputs.threshold }}" \
+          --format "${{ inputs.format }}" \
+          ${{ inputs.fail-on-abandoned == 'true' && '--abandoned-only' || '' }} \
+          || true

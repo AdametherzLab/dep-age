@@ -1,133 +1,162 @@
-# dep-age 🕰️  
-[![CI](https://github.com/AdametherzLab/dep-age/actions/workflows/ci.yml/badge.svg)](https://github.com/AdametherzLab/dep-age/actions) [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](https://www.typescriptlang.org/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)  
+# dep-age
 
-**Your npm dependency time machine** - Uncover ancient packages before they haunt your project!  
+[![CI](https://github.com/AdametherzLab/dep-age/actions/workflows/ci.yml/badge.svg)](https://github.com/AdametherzLab/dep-age/actions) [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](https://www.typescriptlang.org/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-## Features ✅  
-- 🚨 Detect abandoned dependencies (>2 years since update)  
-- 📅 Show exact package age in days  
-- 🔄 Smart alternative package suggestions  
-- 📊 Multiple output formats (ASCII, Markdown, JSON)  
-- 🔒 Zero runtime dependencies - pure TypeScript  
+**Detect abandoned npm dependencies** — health scores, CLI, GitHub Action. Zero runtime deps.
 
-## Installation 💻  
-```bash  
-# npm users  
-npm install @adametherzlab/dep-age  
+## Features
 
-# Bun enthusiasts  
-bun add @adametherzlab/dep-age  
+- Detect abandoned dependencies (configurable threshold, default 2 years)
+- Health score 0-100 with letter grade (A-F)
+- CLI with colored output, multiple formats (text, JSON, markdown)
+- GitHub Action for CI pipelines
+- Sort/filter by name, age, or status
+- Zero runtime dependencies — pure TypeScript
+
+## CLI
+
+```bash
+# Scan current project
+npx @adametherzlab/dep-age
+
+# Custom threshold (1 year), markdown output
+npx @adametherzlab/dep-age --threshold 365 --format markdown
+
+# Just the health score
+npx @adametherzlab/dep-age --score-only
+
+# CI mode — exit non-zero if abandoned deps found
+npx @adametherzlab/dep-age --abandoned-only
 ```
 
-## Quick Start 🚀  
-```typescript  
-// REMOVED external import: import { scanDependencies, generateReport } from '@adametherzlab/dep-age';
+### Options
 
-async function checkDeps() {  
-  const results = await scanDependencies({  
-    packageJsonPath: './package.json',  
-  });  
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--path <dir>` | Path to package.json | `./package.json` |
+| `--threshold <days>` | Days before marking abandoned | `730` |
+| `--format <fmt>` | Output: `text`, `json`, `markdown` | `text` |
+| `--abandoned-only` | Only show abandoned packages | `false` |
+| `--sort <field>` | Sort by: `name`, `age`, `status` | `age` |
+| `--score-only` | Only output the health score | `false` |
+| `--no-color` | Disable colored output | — |
 
-  console.log(generateReport(results, { format: 'ascii' }));  
-}  
+### Sample Output
 
-checkDeps();  
-```  
-
-Sample ASCII output:  
 ```
-┌────────────────────┬────────────┬───────┬─────────────┬──────────────────────────┐  
-│ Package            │ Current    │ Age   │ Status      │ Alternatives              │  
-├────────────────────┼────────────┼───────┼─────────────┼──────────────────────────┤  
-│ express            │ 4.18.2     │ 730   │ ❌ Abandoned │ fastify, koa, polka       │  
-│ typescript         │ 5.2.2      │ 45    │ 🟢 Fresh     │ -                         │  
-│ lodash             │ 3.10.1     │ 2155  │ 💀 Ancient   │ lodash-es, ramda, remeda  │  
-└────────────────────┴────────────┴───────┴─────────────┴──────────────────────────┘  
+Dependency Health: 72/100 (C)
+14 deps scanned | 8 fresh | 4 aging | 2 abandoned
+
+Name                 Version         Age        Status          Alternatives
+--------------------------------------------------------------------------------
+lodash               3.10.1          2155       ABANDONED       lodash-es, ramda
+express              4.18.2          730        ABANDONED       fastify, koa
+typescript           5.2.2           45         ACTIVE
 ```
 
-## API Reference 📚  
+## GitHub Action
 
-### `scanDependencies(options: ScanOptions): Promise<ScanResult>`  
-Analyzes dependencies from package.json against npm registry.  
+```yaml
+- uses: AdametherzLab/dep-age@v2
+  with:
+    path: './package.json'
+    threshold: '730'
+    fail-on-abandoned: 'true'
+    format: 'markdown'
+```
 
-**Options:**  
-```typescript  
-interface ScanOptions {  
-  packageJsonPath: string;  
-  registryUrl?: URL;  
-  fields?: DependencyField[];  // Default: ['dependencies', 'devDependencies']  
-  abandonmentThreshold?: AbandonmentThreshold;  
-}  
-```  
+### Inputs
 
-**Example:**  
-```typescript  
-const results = await scanDependencies({  
-  packageJsonPath: './package.json',  
-  abandonmentThreshold: {  
-    daysSincePublish: 730,  
-    daysSinceUpdate: 365  
-  }  
-});  
-```  
+| Input | Description | Default |
+|-------|-------------|---------|
+| `path` | Path to package.json | `./package.json` |
+| `threshold` | Days before marking abandoned | `730` |
+| `fail-on-abandoned` | Fail if abandoned deps found | `true` |
+| `format` | Output format | `markdown` |
 
-### `generateReport(results: ScanResult, options: ReportOptions): string`  
-**Options:**  
-```typescript  
-interface ReportOptions {  
-  format?: 'ascii' | 'markdown' | 'json';  // Default: 'ascii'  
-  showAlternatives?: boolean;              // Default: true  
-  maxAlternatives?: number;                // Default: 3  
-}  
-```  
+### Outputs
 
-**Markdown example:**  
-```typescript  
-const mdReport = generateReport(results, {  
-  format: 'markdown',  
-  maxAlternatives: 2  
-});  
-```  
+| Output | Description |
+|--------|-------------|
+| `score` | Health score (0-100) |
+| `grade` | Letter grade (A-F) |
+| `abandoned-count` | Number of abandoned deps |
+| `report` | Full report output |
 
-## Advanced Usage 🔧  
+## Programmatic API
 
-### Custom Abandonment Thresholds  
-```typescript  
-import {  
-  scanDependencies,  
-  createAbandonmentThreshold  
-} from '@adametherzlab/dep-age';  
+```typescript
+import {
+  scanDependencies,
+  generateReport,
+  calculateHealthScore,
+  createAbandonmentThreshold
+} from '@adametherzlab/dep-age';
 
-const strictThreshold = createAbandonmentThreshold({  
-  daysSincePublish: 180,      // 6 months since initial publish  
-  daysSinceUpdate: 90         // 3 months since last update  
-});  
+const result = await scanDependencies({
+  packageJsonPath: './package.json',
+});
 
-const results = await scanDependencies({  
-  packageJsonPath: './package.json',  
-  abandonmentThreshold: strictThreshold  
-});  
-```  
+// Health score
+const health = calculateHealthScore(result);
+console.log(`Score: ${health.score}/100 (${health.grade})`);
 
-### Programmatic Access to Metadata  
-```typescript  
-// REMOVED external import: import { fetchPackageMetadata } from '@adametherzlab/dep-age';
+// Full report
+console.log(generateReport(result, { format: 'markdown' }));
+```
 
-const reactMeta = await fetchPackageMetadata('react');  
-console.log(`React first published: ${reactMeta.initialRelease}`);  
-```  
+### `scanDependencies(options)`
 
-## How We Detect Alternatives 🔍  
-1. **Registry Metadata** - Uses npm's `alternatives` field when available  
-2. **Community Trends** - Popular replacement packages from ecosystem data  
-3. **Manual Curation** - Maintenance status and API compatibility checks  
+Scans dependencies from package.json against the npm registry.
 
-⚠️ **Rate Limiting Note:** Large dependency trees may trigger npm registry rate limits (100 requests/5 minutes). Consider splitting scans for monorepos.  
+```typescript
+const result = await scanDependencies({
+  packageJsonPath: './package.json',
+  abandonmentThreshold: createAbandonmentThreshold(365), // 1 year
+});
+```
 
-## Contributing 🤝  
-Got ideas? Found a bug? We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.  
+### `calculateHealthScore(result, threshold?)`
 
-## License 📄  
-MIT © [AdametherzLab](https://github.com/AdametherzLab)  
+Returns a health score object:
 
-*Made with ⌚️ by dependency archaeologists*
+```typescript
+interface HealthScore {
+  score: number;        // 0-100
+  grade: 'A' | 'B' | 'C' | 'D' | 'F';
+  totalDeps: number;
+  freshCount: number;   // < half threshold
+  agingCount: number;   // half to full threshold
+  abandonedCount: number;
+  averageAgeDays: number;
+  oldestPackage: string | null;
+  summary: string;
+}
+```
+
+Scoring: fresh deps = 100%, aging = 50%, abandoned = 0%.
+
+### `generateReport(result, options?)`
+
+Formats scan results as text, JSON, or markdown table.
+
+```typescript
+generateReport(result, {
+  format: 'markdown',
+  showOnlyAbandoned: true,
+  sortBy: 'age',
+  color: false,
+});
+```
+
+## Installation
+
+```bash
+npm install @adametherzlab/dep-age
+# or
+bun add @adametherzlab/dep-age
+```
+
+## License
+
+MIT © [AdametherzLab](https://github.com/AdametherzLab)

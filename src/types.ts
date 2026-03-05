@@ -40,11 +40,26 @@ export type ScanResult = Readonly<Record<string, DependencyInfo>>;
 
 /** Formatting options for report generation. */
 export interface ReportOptions {
-  readonly format?: 'text' | 'json';
+  readonly format?: 'text' | 'json' | 'markdown';
   readonly verbosity?: number;
   readonly color?: boolean;
   readonly showAlternatives?: boolean;
+  readonly showOnlyAbandoned?: boolean;
+  readonly sortBy?: 'name' | 'age' | 'status';
   readonly outputFilePath?: string;
+}
+
+/** Health score summary for a project's dependencies. */
+export interface HealthScore {
+  readonly score: number;
+  readonly grade: 'A' | 'B' | 'C' | 'D' | 'F';
+  readonly totalDeps: number;
+  readonly freshCount: number;
+  readonly agingCount: number;
+  readonly abandonedCount: number;
+  readonly averageAgeDays: number;
+  readonly oldestPackage: string | null;
+  readonly summary: string;
 }
 
 /** Flattened data structure for report display rows. */

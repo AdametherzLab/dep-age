@@ -205,17 +205,19 @@ export async function scanDependencies(options: ScanOptions & { packageJsonPath?
           options.cacheTTL
         )
       );
-      const threshold = options.abandonmentThreshold ?? DEFAULT_ABANDONMENT_THRESHOLD;
       
+      const isAbandoned = meta.ageInDays >= (options.abandonmentThreshold ?? DEFAULT_ABANDONMENT_THRESHOLD);
+
       results.set(name, {
         ...meta,
-        currentVersion: versionSpec,
-        isAbandoned: meta.ageInDays >= threshold
+        currentVersion: versionSpec, // Use the version from package.json
+        isAbandoned,
       });
     } catch (error) {
-      console.warn(`Skipping ${name}: ${error instanceof Error ? error.message : "Unknown error"}`);
+      console.error(`Error scanning ${name}: ${error instanceof Error ? error.message : String(error)}`);
+      // Optionally, you could add a partial result indicating an error
     }
   }));
 
-  return Object.fromEntries(results.entries());
+  return Object.fromEntries(results);
 }

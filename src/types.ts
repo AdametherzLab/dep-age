@@ -65,6 +65,7 @@ export interface HealthScore {
   readonly averageAgeDays: number;
   readonly oldestPackage: string | null;
   readonly summary: string;
+  readonly explanation?: ReadonlyArray<string>; // Detailed explanations for low scores
 }
 
 /** Flattened data structure for report display rows. */

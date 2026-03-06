@@ -19,6 +19,7 @@ export function calculateHealthScore(
       veryFreshCount: 0, freshCount: 0, agingCount: 0, oldCount: 0, abandonedCount: 0,
       averageAgeDays: 0, oldestPackage: null,
       summary: 'No dependencies to evaluate.',
+      explanation: [],
     };
   }
 
@@ -33,16 +34,26 @@ export function calculateHealthScore(
   let abandonedCount = 0;
   let totalAge = 0;
   let oldest = deps[0];
+  const explanation: string[] = [];
 
   for (const dep of deps) {
     totalAge += dep.ageInDays;
     if (dep.ageInDays > oldest.ageInDays) oldest = dep;
 
-    if (dep.ageInDays < quarterThreshold) veryFreshCount++;
-    else if (dep.ageInDays < halfThreshold) freshCount++;
-    else if (dep.ageInDays < threeQuarterThreshold) agingCount++;
-    else if (dep.ageInDays < t) oldCount++;
-    else abandonedCount++;
+    if (dep.ageInDays < quarterThreshold) {
+      veryFreshCount++;
+    } else if (dep.ageInDays < halfThreshold) {
+      freshCount++;
+    } else if (dep.ageInDays < threeQuarterThreshold) {
+      agingCount++;
+      explanation.push(`Package '${dep.name}' is aging (${dep.ageInDays} days old).`);
+    } else if (dep.ageInDays < t) {
+      oldCount++;
+      explanation.push(`Package '${dep.name}' is old (${dep.ageInDays} days old, approaching abandonment threshold of ${t} days).`);
+    } else {
+      abandonedCount++;
+      explanation.push(`Package '${dep.name}' is abandoned (${dep.ageInDays} days old, threshold is ${t} days).`);
+    }
   }
 
   // Score: each dep contributes proportionally based on its category
@@ -66,11 +77,23 @@ export function calculateHealthScore(
     ? `All ${total} dependencies are actively maintained.`
     : `${abandonedCount} of ${total} dependencies may be abandoned (>${t} days since last publish).`;
 
+  // Sort explanations by severity (abandoned first, then old, then aging)
+  explanation.sort((a, b) => {
+    const getSeverity = (msg: string) => {
+      if (msg.includes('is abandoned')) return 3;
+      if (msg.includes('is old')) return 2;
+      if (msg.includes('is aging')) return 1;
+      return 0;
+    };
+    return getSeverity(b) - getSeverity(a);
+  });
+
   return {
     score, grade, totalDeps: total,
     veryFreshCount, freshCount, agingCount, oldCount, abandonedCount,
     averageAgeDays: avgAge,
     oldestPackage: oldest.name,
     summary,
+    explanation: explanation.length > 0 ? explanation : undefined,
   };
 }

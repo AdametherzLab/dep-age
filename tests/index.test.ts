@@ -198,63 +198,52 @@ describe('calculateHealthScore', () => {
 
   it('calculates mixed scores correctly', () => {
     const result: ScanResult = {
-      fresh: makeDep('fresh', 100),
-      aging: makeDep('aging', 500),
-      old: makeDep('old', 800),
-    };
-    const health = calculateHealthScore(result);
-    expect(health.score).toBe(50); // (100 + 50 + 0) / 3 = 50
-    expect(health.grade).toBe('D');
-    expect(health.freshCount).toBe(1);
-    expect(health.agingCount).toBe(1);
-    expect(health.abandonedCount).toBe(1);
-  });
-
-  it('respects custom threshold', () => {
-    const result: ScanResult = {
-      a: makeDep('a', 200),
-    };
-    // With threshold 365, half=182, so 200 days = aging
-    const health = calculateHealthScore(result, createAbandonmentThreshold(365));
-    expect(health.freshCount).toBe(0);
-    expect(health.agingCount).toBe(1);
-    expect(health.abandonedCount).toBe(0);
-    expect(health.score).toBe(50);
-  });
-
-  it('identifies oldest package', () => {
-    const result: ScanResult = {
-      young: makeDep('young', 10),
-      old: makeDep('old', 999),
-    };
-    const health = calculateHealthScore(result);
-    expect(health.oldestPackage).toBe('old');
-  });
-
-  it('provides summary text', () => {
-    const result: ScanResult = {
-      a: makeDep('a', 800),
-    };
-    const health = calculateHealthScore(result);
-    expect(health.summary).toContain('abandoned');
-    expect(health.summary).toContain('1 of 1');
-  });
-
-  it('calculates granular scores correctly', () => {
-    const result: ScanResult = {
-      veryFresh: makeDep('veryFresh', 10),
-      fresh: makeDep('fresh', 100),
-      aging: makeDep('aging', 300),
-      old: makeDep('old', 600),
-      abandoned: makeDep('abandoned', 800),
+      a: makeDep('a', 10), // Very Fresh
+      b: makeDep('b', 100), // Fresh
+      c: makeDep('c', 400), // Aging
+      d: makeDep('d', 600), // Old
+      e: makeDep('e', 800), // Abandoned
     };
     const health = calculateHealthScore(result, createAbandonmentThreshold(730));
-
+    // (100 + 75 + 50 + 25 + 0) / 5 = 50
+    expect(health.score).toBe(50);
+    expect(health.grade).toBe('C');
     expect(health.veryFreshCount).toBe(1);
     expect(health.freshCount).toBe(1);
-    expect(health.agingCount).toBe(2); // aging and old fall into this category
+    expect(health.agingCount).toBe(1);
+    expect(health.oldCount).toBe(1);
     expect(health.abandonedCount).toBe(1);
-    expect(health.score).toBe(50); // (100*1 + 75*1 + 50*1 + 25*1 + 0*1) / 5 = (100+75+50+25+0)/5 = 250/5 = 50
+    expect(health.totalDeps).toBe(5);
+    expect(health.averageAgeDays).toBe(382); // (10+100+400+600+800)/5 = 382
+    expect(health.oldestPackage).toBe('e');
+    expect(health.summary).toInclude('1 of 5 dependencies may be abandoned');
+  });
+
+  it('provides detailed explanations for low scores', () => {
+    const result: ScanResult = {
+      a: makeDep('a', 800), // Abandoned
+      b: makeDep('b', 700), // Old
+      c: makeDep('c', 500), // Aging
+    };
+    const health = calculateHealthScore(result, createAbandonmentThreshold(730));
+    expect(health.score).toBe(25); // (0 + 25 + 50) / 3 = 25
     expect(health.grade).toBe('D');
+    expect(health.explanation).toBeArrayOfSize(3);
+    expect(health.explanation).toInclude('Package \'a\' is abandoned (800 days old, threshold is 730 days).');
+    expect(health.explanation).toInclude('Package \'b\' is old (700 days old, approaching abandonment threshold of 730 days).');
+    expect(health.explanation).toInclude('Package \'c\' is aging (500 days old).');
+  });
+
+  it('handles custom abandonment threshold', () => {
+    const result: ScanResult = {
+      a: makeDep('a', 400),
+      b: makeDep('b', 200),
+    };
+    const health = calculateHealthScore(result, createAbandonmentThreshold(365)); // 1 year threshold
+    expect(health.score).toBe(37); // (0 + 75) / 2 = 37.5 -> 38 (rounded)
+    expect(health.grade).toBe('D');
+    expect(health.abandonedCount).toBe(1);
+    expect(health.freshCount).toBe(1);
+    expect(health.summary).toInclude('1 of 2 dependencies may be abandoned');
   });
 });

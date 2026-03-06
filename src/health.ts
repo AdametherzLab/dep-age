@@ -3,7 +3,7 @@ import { DEFAULT_ABANDONMENT_THRESHOLD } from './types';
 
 /**
  * Calculate a dependency health score (0-100) for the project.
- * Scoring: fresh (<1yr) = full marks, aging (1-2yr) = half, abandoned (>2yr) = 0.
+ * Scoring: very fresh (<0.25*T) = 100%, fresh (<0.5*T) = 75%, aging (<0.75*T) = 50%, old (<1.0*T) = 25%, abandoned (>=1.0*T) = 0%.
  */
 export function calculateHealthScore(
   result: ScanResult,
@@ -16,15 +16,20 @@ export function calculateHealthScore(
   if (total === 0) {
     return {
       score: 100, grade: 'A', totalDeps: 0,
-      freshCount: 0, agingCount: 0, abandonedCount: 0,
+      veryFreshCount: 0, freshCount: 0, agingCount: 0, oldCount: 0, abandonedCount: 0,
       averageAgeDays: 0, oldestPackage: null,
       summary: 'No dependencies to evaluate.',
     };
   }
 
+  const quarterThreshold = Math.floor(t / 4);
   const halfThreshold = Math.floor(t / 2);
+  const threeQuarterThreshold = Math.floor(t * 3 / 4);
+
+  let veryFreshCount = 0;
   let freshCount = 0;
   let agingCount = 0;
+  let oldCount = 0;
   let abandonedCount = 0;
   let totalAge = 0;
   let oldest = deps[0];
@@ -33,14 +38,21 @@ export function calculateHealthScore(
     totalAge += dep.ageInDays;
     if (dep.ageInDays > oldest.ageInDays) oldest = dep;
 
-    if (dep.ageInDays < halfThreshold) freshCount++;
-    else if (dep.ageInDays < t) agingCount++;
+    if (dep.ageInDays < quarterThreshold) veryFreshCount++;
+    else if (dep.ageInDays < halfThreshold) freshCount++;
+    else if (dep.ageInDays < threeQuarterThreshold) agingCount++;
+    else if (dep.ageInDays < t) oldCount++;
     else abandonedCount++;
   }
 
-  // Score: each dep contributes proportionally
-  // Fresh = 100%, Aging = 50%, Abandoned = 0%
-  const rawScore = ((freshCount * 100) + (agingCount * 50)) / total;
+  // Score: each dep contributes proportionally based on its category
+  // Very Fresh = 100%, Fresh = 75%, Aging = 50%, Old = 25%, Abandoned = 0%
+  const rawScore = (
+    (veryFreshCount * 100) +
+    (freshCount * 75) +
+    (agingCount * 50) +
+    (oldCount * 25)
+  ) / total;
   const score = Math.round(Math.max(0, Math.min(100, rawScore)));
 
   const grade: HealthScore['grade'] =
@@ -56,7 +68,7 @@ export function calculateHealthScore(
 
   return {
     score, grade, totalDeps: total,
-    freshCount, agingCount, abandonedCount,
+    veryFreshCount, freshCount, agingCount, oldCount, abandonedCount,
     averageAgeDays: avgAge,
     oldestPackage: oldest.name,
     summary,

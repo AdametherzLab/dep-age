@@ -111,6 +111,7 @@ describe('calculateHealthScore', () => {
     expect(health.score).toBe(100);
     expect(health.grade).toBe('A');
     expect(health.freshCount).toBe(2);
+    expect(health.agingCount).toBe(0);
     expect(health.abandonedCount).toBe(0);
   });
 
@@ -122,6 +123,8 @@ describe('calculateHealthScore', () => {
     const health = calculateHealthScore(result);
     expect(health.score).toBe(0);
     expect(health.grade).toBe('F');
+    expect(health.freshCount).toBe(0);
+    expect(health.agingCount).toBe(0);
     expect(health.abandonedCount).toBe(2);
   });
 
@@ -151,7 +154,9 @@ describe('calculateHealthScore', () => {
     };
     // With threshold 365, half=182, so 200 days = aging
     const health = calculateHealthScore(result, createAbandonmentThreshold(365));
+    expect(health.freshCount).toBe(0);
     expect(health.agingCount).toBe(1);
+    expect(health.abandonedCount).toBe(0);
     expect(health.score).toBe(50);
   });
 
@@ -171,5 +176,26 @@ describe('calculateHealthScore', () => {
     const health = calculateHealthScore(result);
     expect(health.summary).toContain('abandoned');
     expect(health.summary).toContain('1 of 1');
+  });
+
+  it('calculates granular scores correctly', () => {
+    const result: ScanResult = {
+      veryFresh: makeDep('veryFresh', 10),
+      fresh: makeDep('fresh', 100),
+      aging: makeDep('aging', 300),
+      old: makeDep('old', 600),
+      abandoned: makeDep('abandoned', 800),
+    };
+    const health = calculateHealthScore(result, createAbandonmentThreshold(730));
+
+    expect(health.veryFreshCount).toBe(1);
+    expect(health.freshCount).toBe(1);
+    expect(health.agingCount).toBe(2); // aging and old fall into this category
+    expect(health.abandonedCount).toBe(1);
+    expect(health.score).toBe(40); // (100*1 + 75*1 + 50*2 + 0*1) / 5 = (100+75+100)/5 = 275/5 = 55. Oh, wait, the scoring logic changed. Let's re-evaluate.
+    // (100*1 + 75*1 + 50*1 + 25*1 + 0*1) / 5 = (100+75+50+25+0)/5 = 250/5 = 50
+    // With the new scoring: Very Fresh (100), Fresh (75), Aging (50), Old (25), Abandoned (0)
+    expect(health.score).toBe(50);
+    expect(health.grade).toBe('D');
   });
 });

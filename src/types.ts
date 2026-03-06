@@ -54,9 +54,11 @@ export interface HealthScore {
   readonly score: number;
   readonly grade: 'A' | 'B' | 'C' | 'D' | 'F';
   readonly totalDeps: number;
-  readonly freshCount: number;
-  readonly agingCount: number;
-  readonly abandonedCount: number;
+  readonly veryFreshCount: number; // < 0.25 * threshold
+  readonly freshCount: number;     // < 0.5 * threshold
+  readonly agingCount: number;     // < 0.75 * threshold
+  readonly oldCount: number;       // < 1.0 * threshold
+  readonly abandonedCount: number; // >= 1.0 * threshold
   readonly averageAgeDays: number;
   readonly oldestPackage: string | null;
   readonly summary: string;

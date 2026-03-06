@@ -26,6 +26,9 @@ export interface ScanOptions {
   readonly registryUrl?: string;
   readonly abandonmentThreshold?: AbandonmentThreshold;
   readonly checkForAlternatives?: boolean;
+  readonly useCache?: boolean;
+  readonly cachePath?: string;
+  readonly cacheTTL?: number; // Time-to-live for cache entries in milliseconds
 }
 
 /** Specific dependency fields to scan in package.json */

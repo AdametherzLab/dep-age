@@ -1,5 +1,6 @@
 import * as path from "path";
 import * as fs from "fs";
+import * as os from "os";
 import { setTimeout as sleep } from "timers/promises";
 import type { PackageJson, ScanOptions, DependencyInfo, ScanResult, AbandonmentThreshold } from "./types";
 import { DEFAULT_ABANDONMENT_THRESHOLD } from "./types";
@@ -7,6 +8,12 @@ import { DEFAULT_ABANDONMENT_THRESHOLD } from "./types";
 const npmRegistryUrl = "https://registry.npmjs.org/";
 const maxConcurrentFetches = 10;
 const fetchTimeoutMs = 8000;
+const defaultCacheTTL = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+
+interface CacheEntry {
+  timestamp: number;
+  data: Omit<DependencyInfo, 'currentVersion' | 'isAbandoned'>;
+}
 
 /** Internal queue implementation for concurrency control */
 class PromiseQueue {
@@ -58,23 +65,43 @@ function getDependenciesFromPackageJson(
  */
 function extractAlternativesFromDeprecation(message?: string): string[] {
   if (!message) return [];
-  const match = message.match(/use\s+([@\w/-]+(?:\s+[@\w/-]+)*)\s+instead/gi);
+  const match = message.match(/use\s+([@\w/\-]+(?:\s+[@\w/\-]+)*)\s+instead/gi);
   return match ? [...new Set(match.flatMap(m => m.replace(/use\s+/gi, "").replace(/\s+instead/gi, "").split(/\s+/)))] : [];
 }
 
 /**
- * Fetch npm registry metadata for a package
- * @param name - Package name to query
- * @param registryUrl - Custom registry URL (default: npm public registry)
- * @returns Processed package metadata with version timestamps
- * @throws {Error} When registry response is invalid or request fails
- * @example
- * const reactMeta = await fetchPackageMetadata('react');
+ * Fetches package metadata from the npm registry or cache.
+ * @param name - Package name.
+ * @param registryUrl - URL of the npm registry.
+ * @param useCache - Whether to use caching.
+ * @param cachePath - Path to the cache directory.
+ * @param cacheTTL - Time-to-live for cache entries in milliseconds.
+ * @returns Processed package metadata.
  */
 export async function fetchPackageMetadata(
   name: string,
-  registryUrl: string = npmRegistryUrl
-): Promise<DependencyInfo> {
+  registryUrl: string = npmRegistryUrl,
+  useCache: boolean = false,
+  cachePath?: string,
+  cacheTTL: number = defaultCacheTTL
+): Promise<Omit<DependencyInfo, 'currentVersion' | 'isAbandoned'>> {
+  const cacheDir = cachePath ? path.join(cachePath, '.dep-age-cache') : path.join(os.tmpdir(), '.dep-age-cache');
+  const cacheFilePath = path.join(cacheDir, `${encodeURIComponent(name)}.json`);
+
+  if (useCache) {
+    try {
+      if (fs.existsSync(cacheFilePath)) {
+        const cacheEntry: CacheEntry = JSON.parse(fs.readFileSync(cacheFilePath, 'utf8'));
+        if (Date.now() - cacheEntry.timestamp < cacheTTL) {
+          return { ...cacheEntry.data, publishedDate: new Date(cacheEntry.data.publishedDate) };
+        }
+      }
+    } catch (error) {
+      console.warn(`Cache read error for ${name}: ${error instanceof Error ? error.message : String(error)}`);
+      // Continue to fetch if cache read fails
+    }
+  }
+
   const registryEndpoint = new URL(name, registryUrl).toString();
   
   const controller = new AbortController();
@@ -111,14 +138,26 @@ export async function fetchPackageMetadata(
     const ageInDays = Math.floor((Date.now() - publishDate.getTime()) / 86400000);
     const deprecatedMessage = metadata.versions[latestVersion].deprecated || metadata.deprecated;
 
-    return {
+    const resultData: Omit<DependencyInfo, 'currentVersion' | 'isAbandoned'> = {
       name,
-      currentVersion: "", // Filled during scanning from actual package.json
       publishedDate: publishDate,
       ageInDays,
-      isAbandoned: false, // Evaluated later with threshold
       alternatives: extractAlternativesFromDeprecation(deprecatedMessage)
     };
+
+    if (useCache) {
+      try {
+        if (!fs.existsSync(cacheDir)) {
+          fs.mkdirSync(cacheDir, { recursive: true });
+        }
+        const cacheEntry: CacheEntry = { timestamp: Date.now(), data: resultData };
+        fs.writeFileSync(cacheFilePath, JSON.stringify(cacheEntry), 'utf8');
+      } catch (error) {
+        console.warn(`Cache write error for ${name}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    return resultData;
   } catch (error) {
     throw new Error(`Failed to fetch metadata for ${name}: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -157,7 +196,15 @@ export async function scanDependencies(options: ScanOptions & { packageJsonPath?
     ) ?? "*";
     
     try {
-      const meta = await queue.enqueue(() => fetchPackageMetadata(name, options.registryUrl));
+      const meta = await queue.enqueue(() => 
+        fetchPackageMetadata(
+          name,
+          options.registryUrl,
+          options.useCache,
+          options.cachePath,
+          options.cacheTTL
+        )
+      );
       const threshold = options.abandonmentThreshold ?? DEFAULT_ABANDONMENT_THRESHOLD;
       
       results.set(name, {

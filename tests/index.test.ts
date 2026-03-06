@@ -89,6 +89,68 @@ describe('dep-age', () => {
 
     expect(Object.keys(result)).toHaveLength(0);
   });
+
+  it('uses cache if enabled and available', async () => {
+    const packagePath = path.join(tmpDir, 'package.json');
+    fs.writeFileSync(packagePath, JSON.stringify({ dependencies: { cachedpkg: '1.0.0' } }));
+
+    const mockDate = new Date(Date.now() - 86400000).toISOString();
+    let fetchCount = 0;
+    globalThis.fetch = async (url) => {
+      fetchCount++;
+      const pkg = url.toString().split('/').pop()!;
+      const latest = '1.0.0';
+      return new Response(JSON.stringify({
+        'dist-tags': { latest },
+        versions: { [latest]: { version: latest } },
+        time: { modified: mockDate, created: mockDate, [latest]: mockDate }
+      }));
+    };
+
+    // First scan, should fetch
+    const result1 = await scanDependencies({ packageJsonPath, useCache: true, cachePath: tmpDir });
+    expect(fetchCount).toBe(1);
+    expect(result1.cachedpkg).toBeDefined();
+
+    // Second scan, should use cache
+    const result2 = await scanDependencies({ packageJsonPath, useCache: true, cachePath: tmpDir });
+    expect(fetchCount).toBe(1); // Fetch count should not increase
+    expect(result2.cachedpkg).toBeDefined();
+
+    // Third scan with cache disabled, should fetch again
+    const result3 = await scanDependencies({ packageJsonPath, useCache: false });
+    expect(fetchCount).toBe(2); // Fetch count should increase
+    expect(result3.cachedpkg).toBeDefined();
+  });
+
+  it('invalidates cache if stale', async () => {
+    const packagePath = path.join(tmpDir, 'package.json');
+    fs.writeFileSync(packagePath, JSON.stringify({ dependencies: { stalepkg: '1.0.0' } }));
+
+    const mockDate = new Date(Date.now() - 86400000).toISOString();
+    let fetchCount = 0;
+    globalThis.fetch = async (url) => {
+      fetchCount++;
+      const pkg = url.toString().split('/').pop()!;
+      const latest = '1.0.0';
+      return new Response(JSON.stringify({
+        'dist-tags': { latest },
+        versions: { [latest]: { version: latest } },
+        time: { modified: mockDate, created: mockDate, [latest]: mockDate }
+      }));
+    };
+
+    // First scan, fetch and cache
+    await scanDependencies({ packageJsonPath, useCache: true, cachePath: tmpDir, cacheTTL: 1000 });
+    expect(fetchCount).toBe(1);
+
+    // Wait for cache to expire
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
+    // Second scan, cache should be stale, fetch again
+    await scanDependencies({ packageJsonPath, useCache: true, cachePath: tmpDir, cacheTTL: 1000 });
+    expect(fetchCount).toBe(2);
+  });
 });
 
 describe('calculateHealthScore', () => {
@@ -192,10 +254,7 @@ describe('calculateHealthScore', () => {
     expect(health.freshCount).toBe(1);
     expect(health.agingCount).toBe(2); // aging and old fall into this category
     expect(health.abandonedCount).toBe(1);
-    expect(health.score).toBe(40); // (100*1 + 75*1 + 50*2 + 0*1) / 5 = (100+75+100)/5 = 275/5 = 55. Oh, wait, the scoring logic changed. Let's re-evaluate.
-    // (100*1 + 75*1 + 50*1 + 25*1 + 0*1) / 5 = (100+75+50+25+0)/5 = 250/5 = 50
-    // With the new scoring: Very Fresh (100), Fresh (75), Aging (50), Old (25), Abandoned (0)
-    expect(health.score).toBe(50);
+    expect(health.score).toBe(50); // (100*1 + 75*1 + 50*1 + 25*1 + 0*1) / 5 = (100+75+50+25+0)/5 = 250/5 = 50
     expect(health.grade).toBe('D');
   });
 });
